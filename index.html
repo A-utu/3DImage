@@ -1,185 +1,76 @@
 <!doctype html>
 <html>
     <head>
-        <meta charset="utf-8"/>
-        <meta name="viewport" content="width=device-width, initial-scale=1"/>
-
-        <!-- 1) A-Frameは 1.2.0（パーティクルと相性が良い） -->
-        <script src="https://aframe.io/releases/1.2.0/aframe.min.js"></script>
-
-        <!-- 1.5) 念のため THREE をグローバルへ（古いプラグイン対策） -->
-        <script>
-            // A-Frame 読み込み後に THREE をグローバルへ露出
-            if (window.AFRAME && window.AFRAME.THREE && !window.THREE) {
-                window.THREE = window.AFRAME.THREE;
-            }
-        </script>
-
-        <!-- 2) パーティクル（THREE がグローバルにある状態で読み込む） -->
-        <script src="https://unpkg.com/aframe-particle-system-component/dist/aframe-particle-system-component.min.js"></script>
-
-        <!-- 3) AR.js（A-Frameの後でOK） -->
+        <script src="https://aframe.io/releases/1.0.4/aframe.min.js"></script>
         <script src="https://raw.githack.com/AR-js-org/AR.js/master/aframe/build/aframe-ar.js"></script>
-
-        <!-- 4) 自作スクリプト群（コンポーネント／フェード／花火シーケンス） -->
+        <script src="https://raw.githack.com/AR-js-org/studio-backend/master/src/modules/marker/tools/gesture-detector.js"></script>
+        <script src="https://raw.githack.com/AR-js-org/studio-backend/master/src/modules/marker/tools/gesture-handler.js"></script>
         <script>
-            // 最大辺を target に自動スケール
-            AFRAME.registerComponent('autoscale', {
-                schema: { target: { default: 0.6 } },
-                init() {
-                    this.el.addEventListener('model-loaded', () => {
-                        const mesh = this.el.getObject3D('mesh');
-                        if (!mesh) return;
-                        const box = new THREE.Box3().setFromObject(mesh);
-                        const size = new THREE.Vector3(); box.getSize(size);
-                        const s = this.data.target / Math.max(size.x, size.y, size.z || 1);
-                        this.el.setAttribute('scale', `${s} ${s} ${s}`);
-                        console.log('[autoscale] scale=', s.toFixed(3));
-                    });
-                    this.el.addEventListener('model-error', e => console.error('[gltf-model:error]', e.detail || e));
-                }
-            });
+            AFRAME.registerComponent('videohandler', {
+                init: function () {
+                    var marker = this.el;
+                    this.vid = document.querySelector("#vid");
 
-            // 全サブメッシュの材質を「両面＋少し発光＋透明アニメ対応」に強制
-            AFRAME.registerComponent('force-material', {
-                schema: {
-                    color: { default: '#ffd700' },
-                    emissive: { default: '#5a4300' },
-                    emissiveIntensity: { default: 0.4 },
-                    metalness: { default: 0.4 },
-                    roughness: { default: 0.25 }
+                    marker.addEventListener('markerFound', function () {
+                        this.toggle = true;
+                        this.vid.play();
+                    }.bind(this));
+
+                    marker.addEventListener('markerLost', function () {
+                        this.toggle = false;
+                        this.vid.pause();
+                    }.bind(this));
                 },
-                init() {
-                    this.el.addEventListener('model-loaded', () => {
-                        const root = this.el.getObject3D('mesh');
-                        if (!root) return;
-                        root.traverse(o => {
-                            if (o.isMesh) {
-                                o.material = new THREE.MeshStandardMaterial({
-                                    color: new THREE.Color(this.data.color),
-                                    emissive: new THREE.Color(this.data.emissive),
-                                    emissiveIntensity: this.data.emissiveIntensity,
-                                    metalness: this.data.metalness,
-                                    roughness: this.data.roughness,
-                                    side: THREE.DoubleSide,
-                                    transparent: true,
-                                    opacity: 0.0
-                                });
-                            }
-                        });
-                        console.log('[force-material] applied');
-                    });
-                }
-            });
-
-            // ▼ 不透明度ユーティリティ
-            function setOpacityForAllMeshes(el, opacity) {
-                const mesh = el.getObject3D('mesh');
-                if (!mesh) return;
-                mesh.traverse(o => {
-                    if (o.isMesh && o.material) {
-                        o.material.transparent = true;
-                        o.material.opacity = opacity;
-                    }
-                });
-            }
-            function animateOpacity(el, from, to, dur) {
-                const start = performance.now();
-                setOpacityForAllMeshes(el, from);
-                function tick(now) {
-                    const t = Math.min(1, (now - start) / dur);
-                    const v = from + (to - from) * t;
-                    setOpacityForAllMeshes(el, v);
-                    if (t < 1) requestAnimationFrame(tick);
-                }
-                requestAnimationFrame(tick);
-            }
-
-            // ▼ 花火ワンショット
-            function burstOnce(el, onTime = 900) {
-                el.setAttribute('particle-system', 'enabled', true);
-                setTimeout(() => el.setAttribute('particle-system', 'enabled', false), onTime);
-            }
-
-            // ▼ マーカー検出でシーケンス起動（フェードイン→花火→フェードアウト）
-            document.addEventListener('DOMContentLoaded', () => {
-                const marker = document.querySelector('a-marker');
-                const title = document.getElementById('title3d');
-                const fw1 = document.getElementById('fw1');
-                const fw2 = document.getElementById('fw2');
-                const fw3 = document.getElementById('fw3');
-
-                let armed = false;
-                marker.addEventListener('markerFound', () => {
-                    if (armed) return;
-                    armed = true;
-
-                    // 1) フェードイン
-                    animateOpacity(title, 0.0, 1.0, 900);
-
-                    // 2) 花火（時差で複数）
-                    setTimeout(() => burstOnce(fw1, 1000), 1200);
-                    setTimeout(() => burstOnce(fw2, 900), 2000);
-                    setTimeout(() => fw3 && burstOnce(fw3, 900), 2600);
-
-                    // 3) フェードアウト
-                    setTimeout(() => animateOpacity(title, 1.0, 0.0, 800), 3500);
-
-                    // 再トリガ許可（必要に応じて時間調整）
-                    setTimeout(() => { armed = false; }, 5000);
-                });
             });
         </script>
     </head>
-    <body style="margin:0; overflow:hidden;">
-        <a-scene embedded renderer="alpha:true; colorManagement:true;"
-                arjs="trackingMethod: best; sourceType: webcam; debugUIEnabled: false;">
-            <!-- 明るめ照明 -->
-            <a-entity light="type: ambient; intensity: 1.1"></a-entity>
-            <a-entity light="type: directional; intensity: 1.0" position="1 2 1"></a-entity>
 
-            <a-marker type="pattern" url="assets/marker.patt" emitevents="true">
-                <!-- 原点テスト -->
-                <a-box position="0 0.03 0" width="0.12" height="0.02" depth="0.4"
-                    color="#00ff88" opacity="0.35"></a-box>
+    <body style="margin: 0; overflow: hidden;">
+        <a-scene
+            vr-mode-ui="enabled: false"
+            loading-screen="enabled: false;"
+            arjs='sourceType: webcam; debugUIEnabled: false;'
+            id="scene"
+            embedded
+            gesture-detector
+        >
+            <a-assets>
+                <video
+                    id="vid"
+                    src="assets/asset.mp4"
+                    preload="auto"
+                    response-type="arraybuffer"
+                    loop
+                    crossorigin
+                    webkit-playsinline
+                    autoplay
+                    muted
+                    playsinline
+                ></video>
+            </a-assets>
 
-                <!-- 3D文字（GLB） -->
-                <a-entity id="title3d"
-                        gltf-model="url(models/congrats.glb)"
-                        position="0 0.10 0"
-                        autoscale="target: 0.6"
-                        force-material>
-                </a-entity>
-
-                <!-- 花火1（中央上） -->
-                <a-entity id="fw1" position="0 0.35 0"
-                        particle-system="enabled: false; type: sphere;
-                                        particleCount: 240; size: 0.05; sizeSpread: 0.02;
-                                        velocityValue: 0 2.2 0; velocitySpread: 1.2 1.2 1.2;
-                                        accelerationValue: 0 -1.6 0;
-                                        color: #ff3b3b, #ffd93b, #3b8bff, #9cff6b;
-                                        blending: additive; opacity: 1; maxAge: 0.9;">
-                </a-entity>
-
-                <!-- 花火2（少し奥） -->
-                <a-entity id="fw2" position="0 0.30 -0.25"
-                        particle-system="enabled: false; type: sphere;
-                                        particleCount: 200; size: 0.045; sizeSpread: 0.02;
-                                        velocityValue: 0 2.0 0; velocitySpread: 1.0 1.0 1.0;
-                                        accelerationValue: 0 -1.4 0;
-                                        color: #ffd93b, #ff3b3b, #ffffff;
-                                        blending: additive; opacity: 1; maxAge: 0.8;">
-                </a-entity>
-
-                <!-- 花火3（手前・任意） -->
-                <a-entity id="fw3" position="0 0.28 0.22"
-                        particle-system="enabled: false; type: sphere;
-                                        particleCount: 200; size: 0.045; sizeSpread: 0.02;
-                                        velocityValue: 0 1.9 0; velocitySpread: 1.0 1.0 1.0;
-                                        accelerationValue: 0 -1.2 0;
-                                        color: #ffffff, #ff99cc, #99ddff;
-                                        blending: additive; opacity: 1; maxAge: 0.8;">
-                </a-entity>
+            <a-marker
+                type="pattern"
+                preset="custom"
+                url="assets/marker.patt"
+                videohandler
+                smooth="true"
+                smoothCount="10"
+                smoothTolerance="0.01"
+                smoothThreshold="5"
+                raycaster="objects: .clickable"
+                emitevents="true"
+                cursor="fuse: false; rayOrigin: mouse;"
+                id="markerA"
+            >
+                <a-video
+                    src="#vid"
+                    scale="1 1 1"
+                    position="0 0.1 0"
+                    rotation="-90 0 0"
+                    class="clickable"
+                    gesture-handler
+                ></a-video>
             </a-marker>
 
             <a-entity camera></a-entity>
